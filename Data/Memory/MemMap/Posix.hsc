@@ -17,7 +17,9 @@
 --
 -----------------------------------------------------------------------------
 
+#if !defined(wasm32_HOST_ARCH)
 #include <sys/mman.h>
+#endif
 #include <unistd.h>
 
 {-# LANGUAGE ForeignFunctionInterface #-}
@@ -117,18 +119,26 @@ data MemorySyncFlag =
     deriving (Show,Read,Eq)
 
 cvalueOfMemoryProts :: [MemoryProtection] -> CInt
+#if defined(wasm32_HOST_ARCH)
+cvalueOfMemoryProts _ = error "Data.Memory.MemMap.cvalueOfMemoryProts"
+#else
 cvalueOfMemoryProts = foldl (.|.) 0 . map toProt
   where toProt :: MemoryProtection -> CInt
         toProt MemoryProtectionNone    = (#const PROT_NONE)
         toProt MemoryProtectionRead    = (#const PROT_READ)
         toProt MemoryProtectionWrite   = (#const PROT_WRITE)
         toProt MemoryProtectionExecute = (#const PROT_EXEC)
+#endif
 
 cvalueOfMemorySync :: [MemorySyncFlag] -> CInt
+#if defined(wasm32_HOST_ARCH)
+cvalueOfMemorySync _ = error "Data.Memory.MemMap.cvalueOfMemorySync"
+#else
 cvalueOfMemorySync = foldl (.|.) 0 . map toSync
   where toSync MemorySyncAsync      = (#const MS_ASYNC)
         toSync MemorySyncSync       = (#const MS_SYNC)
         toSync MemorySyncInvalidate = (#const MS_INVALIDATE)
+#endif
 
 -- | Map pages of memory.
 --
@@ -139,10 +149,13 @@ cvalueOfMemorySync = foldl (.|.) 0 . map toSync
 memoryMap :: Maybe (Ptr a)      -- ^ The address to map to if MapFixed is used.
           -> CSize              -- ^ The length of the mapping
           -> [MemoryProtection] -- ^ the memory protection associated with the mapping
-          -> MemoryMapFlag      -- ^ 
+          -> MemoryMapFlag      -- ^
           -> Maybe Fd
           -> COff
           -> IO (Ptr a)
+#if defined(wasm32_HOST_ARCH)
+memoryMap _ _ _ _ _ _ = error "Data.Memory.MemMap.memoryMap"
+#else
 memoryMap initPtr sz prots flag mfd off =
     throwErrnoIf (== m1ptr) "mmap" (c_mmap (maybe nullPtr id initPtr) sz cprot cflags fd off)
   where m1ptr  = nullPtr `plusPtr` (-1)
@@ -161,6 +174,7 @@ memoryMap initPtr sz prots flag mfd off =
 
         toMapFlag MemoryMapShared  = (#const MAP_SHARED)
         toMapFlag MemoryMapPrivate = (#const MAP_PRIVATE)
+#endif
 
 -- | Unmap pages of memory
 --
@@ -172,6 +186,9 @@ memoryUnmap ptr sz = throwErrnoIfMinus1_ "munmap" (c_munmap ptr sz)
 --
 -- call 'madvise'
 memoryAdvise :: Ptr a -> CSize -> MemoryAdvice -> IO ()
+#if defined(wasm32_HOST_ARCH)
+memoryAdvise _ _ _ = error "Data.Memory.MemMap.memoryAdvise"
+#else
 memoryAdvise ptr sz adv = throwErrnoIfMinus1_ "madvise" (c_madvise ptr sz cadv)
   where cadv = toAdvice adv
 #if defined(POSIX_MADV_NORMAL)
@@ -186,6 +203,7 @@ memoryAdvise ptr sz adv = throwErrnoIfMinus1_ "madvise" (c_madvise ptr sz cadv)
         toAdvice MemoryAdviceSequential = (#const MADV_SEQUENTIAL)
         toAdvice MemoryAdviceWillNeed = (#const MADV_WILLNEED)
         toAdvice MemoryAdviceDontNeed = (#const MADV_DONTNEED)
+#endif
 #endif
 
 -- | lock a range of process address space
@@ -216,7 +234,7 @@ memorySync ptr sz flags = throwErrnoIfMinus1_ "msync" (c_msync ptr sz cflags)
   where cflags = cvalueOfMemorySync flags
 
 -- | Return the operating system page size.
--- 
+--
 -- call 'sysconf'
 sysconfPageSize :: Int
 sysconfPageSize = fromIntegral $ c_sysconf (#const _SC_PAGESIZE)
